@@ -422,6 +422,8 @@ function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
 function playGrid(grid, tempo) {
   if (isPlaying) stopPlayback();
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  // Chrome suspends AudioContext after inactivity — must resume on user gesture
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   isPlaying = true;
   scheduledNodes = [];
   const beatDur = 60 / tempo / 2; // Eighth note duration in seconds
@@ -632,4 +634,312 @@ invertBtn.addEventListener('click', () => {
   const invertedGrid = abcToGrid(currentAbc);
   drawGrid(invertedGrid, 'invert-canvas');
   invertSection.classList.remove('hidden');
+});
+
+// ============================================================
+//  MIDI → IMAGE: Reverse Pipeline
+// ============================================================
+
+// ---- Minimal MIDI Parser ----
+function parseMidi(arrayBuffer) {
+  const data = new Uint8Array(arrayBuffer);
+  let pos = 0;
+
+  function readU16() { const v = (data[pos]<<8)|data[pos+1]; pos+=2; return v; }
+  function readU32() { const v = (data[pos]<<24)|(data[pos+1]<<16)|(data[pos+2]<<8)|data[pos+3]; pos+=4; return v; }
+  function readVLQ() {
+    let v = 0;
+    while (true) {
+      const b = data[pos++];
+      v = (v << 7) | (b & 0x7F);
+      if (!(b & 0x80)) break;
+    }
+    return v;
+  }
+  function readStr(n) { let s=''; for(let i=0;i<n;i++) s+=String.fromCharCode(data[pos++]); return s; }
+
+  // Header
+  const hdrId = readStr(4); // "MThd"
+  const hdrLen = readU32();
+  const format = readU16();
+  const nTracks = readU16();
+  const tpq = readU16();
+  if (hdrId !== 'MThd') throw new Error('Not a MIDI file');
+
+  let tempo = 500000; // default 120 BPM
+  const tracks = [];
+
+  for (let t = 0; t < nTracks; t++) {
+    const trkId = readStr(4); // "MTrk"
+    const trkLen = readU32();
+    const trkEnd = pos + trkLen;
+    const notes = [];
+    let absTick = 0;
+    let runningStatus = 0;
+    const activeNotes = {}; // midi -> {tick, vel}
+
+    while (pos < trkEnd) {
+      const delta = readVLQ();
+      absTick += delta;
+
+      let status = data[pos];
+      if (status < 0x80) {
+        // Running status
+        status = runningStatus;
+      } else {
+        pos++;
+        if (status >= 0x80 && status < 0xF0) runningStatus = status;
+      }
+
+      const type = status & 0xF0;
+
+      if (status === 0xFF) {
+        // Meta event
+        const metaType = data[pos++];
+        const metaLen = readVLQ();
+        if (metaType === 0x51 && metaLen === 3) {
+          tempo = (data[pos]<<16)|(data[pos+1]<<8)|data[pos+2];
+        }
+        pos += metaLen;
+      } else if (type === 0x90) {
+        // Note on
+        const note = data[pos++];
+        const vel = data[pos++];
+        if (vel > 0) {
+          activeNotes[note] = { tick: absTick, vel };
+        } else {
+          // vel=0 is note off
+          if (activeNotes[note]) {
+            notes.push({ midi: note, vel: activeNotes[note].vel, start: activeNotes[note].tick, end: absTick });
+            delete activeNotes[note];
+          }
+        }
+      } else if (type === 0x80) {
+        // Note off
+        const note = data[pos++];
+        pos++; // vel
+        if (activeNotes[note]) {
+          notes.push({ midi: note, vel: activeNotes[note].vel, start: activeNotes[note].tick, end: absTick });
+          delete activeNotes[note];
+        }
+      } else if (type === 0xC0 || type === 0xD0) {
+        pos++; // 1 data byte
+      } else if (type === 0xF0 || type === 0xF7) {
+        const len = readVLQ();
+        pos += len;
+      } else {
+        pos += 2; // 2 data bytes (most channel messages)
+      }
+    }
+    pos = trkEnd;
+    if (notes.length > 0) tracks.push(notes);
+  }
+
+  const bpm = Math.round(60000000 / tempo);
+  return { tracks, tpq, bpm };
+}
+
+// ---- MIDI notes → 32×32 grid ----
+function midiToGrid(parsed) {
+  const grid = Array.from({length: GRID}, () =>
+    Array.from({length: GRID}, () => ({r: 10, g: 10, b: 15})) // near-black background
+  );
+
+  const { tracks, tpq } = parsed;
+  const eighthTick = tpq / 2; // ticks per eighth note
+  const totalEighths = GRID * ROWS_PER_VOICE; // 32 measures × 8 eighths
+  const totalTicks = totalEighths * eighthTick;
+
+  // Assign tracks to voices (up to 4)
+  const voiceTracks = tracks.slice(0, NUM_VOICES);
+
+  voiceTracks.forEach((notes, vi) => {
+    const voice = VOICES[vi];
+    if (!voice) return;
+
+    notes.forEach(note => {
+      // Map tick position to grid position
+      const startEighth = Math.floor(note.start / eighthTick);
+      const endEighth = Math.ceil(note.end / eighthTick);
+      if (startEighth >= totalEighths) return;
+
+      const col = Math.floor(startEighth / ROWS_PER_VOICE);
+      const beatStart = startEighth % ROWS_PER_VOICE;
+
+      // Map MIDI pitch to hue (0-360)
+      const pitchRange = voice.hi - voice.lo;
+      const clampedMidi = Math.max(voice.lo, Math.min(voice.hi, note.midi));
+      const hue = ((clampedMidi - voice.lo) / pitchRange) * 330; // 0-330 to avoid red wrapping
+
+      // Map velocity to saturation
+      const sat = Math.max(0.15, Math.min(1, (note.vel - 20) / 100));
+
+      // Map duration to lightness (longer = brighter)
+      const durEighths = Math.min(ROWS_PER_VOICE, endEighth - startEighth);
+      const lightness = 0.25 + (durEighths / ROWS_PER_VOICE) * 0.5;
+
+      // Fill grid cells for this note's duration
+      for (let b = 0; b < durEighths; b++) {
+        const beat = beatStart + b;
+        if (beat >= ROWS_PER_VOICE) break;
+        if (col >= GRID) break;
+        const row = voice.rows[beat];
+        const rgb = hslToRgb(hue, sat, lightness);
+        grid[row][col] = rgb;
+      }
+    });
+  });
+
+  return grid;
+}
+
+// ---- MIDI playback with cursor on generated grid ----
+let midiGrid = null;
+let midiTempo = 120;
+
+function playMidiGrid() {
+  if (!midiGrid) return;
+  // Reuse the existing playGrid + cursor animation on the midi-grid-canvas
+  if (isPlaying) stopPlayback();
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  isPlaying = true;
+  scheduledNodes = [];
+
+  const beatDur = 60 / midiTempo / 2;
+  const now = audioCtx.currentTime + 0.1;
+  const waveforms = ['sine', 'triangle', 'square', 'sawtooth'];
+
+  VOICES.forEach((voice, vi) => {
+    for (let col = 0; col < GRID; col++) {
+      for (let b = 0; b < ROWS_PER_VOICE; b++) {
+        const row = voice.rows[b];
+        const px = midiGrid[row][col];
+        const { h, s, l } = rgbToHsl(px.r, px.g, px.b);
+        if (l < 0.15 && s < 0.1) continue; // Skip near-black (background)
+
+        // Check tied
+        let dur = 1;
+        while (b + dur < ROWS_PER_VOICE) {
+          const nRow = voice.rows[b + dur];
+          const nPx = midiGrid[nRow][col];
+          const nHsl = rgbToHsl(nPx.r, nPx.g, nPx.b);
+          if (Math.abs(nHsl.h - h) < 15 && nHsl.l > 0.15) dur++;
+          else break;
+        }
+
+        const freq = midiToFreq(Math.round(voice.lo + (h / 330) * (voice.hi - voice.lo)));
+        const volume = 0.02 + s * 0.06;
+        const noteTime = now + (col * ROWS_PER_VOICE + b) * beatDur;
+        const noteDur = dur * beatDur;
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = waveforms[vi];
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, noteTime);
+        gain.gain.linearRampToValueAtTime(volume, noteTime + 0.015);
+        gain.gain.setValueAtTime(volume * 0.7, noteTime + noteDur * 0.7);
+        gain.gain.linearRampToValueAtTime(0, noteTime + noteDur - 0.01);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(noteTime);
+        osc.stop(noteTime + noteDur);
+        scheduledNodes.push(osc);
+        b += dur - 1;
+      }
+    }
+  });
+
+  playbackStartTime = now;
+  // Cursor animation on the midi grid canvas
+  startMidiPlaybackAnimation(beatDur);
+  const totalDur = GRID * ROWS_PER_VOICE * beatDur;
+  setTimeout(() => {
+    isPlaying = false;
+    cancelAnimationFrame(animFrameId);
+    drawGrid(midiGrid, 'midi-grid-canvas');
+  }, totalDur * 1000 + 500);
+}
+
+function startMidiPlaybackAnimation(beatDur) {
+  const c = document.getElementById('midi-grid-canvas');
+  const ctx = c.getContext('2d');
+  const cellW = c.width / GRID;
+
+  function animate() {
+    if (!isPlaying || !audioCtx) return;
+    const elapsed = audioCtx.currentTime - playbackStartTime;
+    const currentEighth = elapsed / beatDur;
+    const currentCol = Math.floor(currentEighth / ROWS_PER_VOICE);
+    const subBeat = (currentEighth % ROWS_PER_VOICE) / ROWS_PER_VOICE;
+
+    drawGrid(midiGrid, 'midi-grid-canvas');
+
+    if (currentCol > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(0, 0, currentCol * cellW, c.height);
+    }
+    if (currentCol < GRID) {
+      ctx.fillStyle = 'rgba(167,139,250,0.3)';
+      ctx.fillRect(currentCol * cellW, 0, cellW, c.height);
+      ctx.strokeStyle = 'rgba(244,114,182,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(currentCol * cellW, subBeat * c.height);
+      ctx.lineTo((currentCol+1) * cellW, subBeat * c.height);
+      ctx.stroke();
+    }
+    if (currentCol+1 < GRID) {
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.fillRect((currentCol+1)*cellW, 0, c.width-(currentCol+1)*cellW, c.height);
+    }
+    animFrameId = requestAnimationFrame(animate);
+  }
+  animFrameId = requestAnimationFrame(animate);
+}
+
+// ---- MIDI Upload UI Wiring ----
+const midiDropZone = document.getElementById('midi-drop-zone');
+const midiFileInput = document.getElementById('midi-file-input');
+const midiImageSection = document.getElementById('midi-image-section');
+const midiPlayBtn = document.getElementById('midi-play-btn');
+const midiStopBtn = document.getElementById('midi-stop-btn');
+
+midiDropZone.addEventListener('dragover', (e) => { e.preventDefault(); midiDropZone.classList.add('dragover'); });
+midiDropZone.addEventListener('dragleave', () => midiDropZone.classList.remove('dragover'));
+midiDropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  midiDropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleMidiFile(e.dataTransfer.files[0]);
+});
+midiDropZone.addEventListener('click', () => midiFileInput.click());
+midiFileInput.addEventListener('change', (e) => { if (e.target.files.length) handleMidiFile(e.target.files[0]); });
+
+function handleMidiFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = parseMidi(e.target.result);
+      console.log('Parsed MIDI:', parsed.tracks.length, 'tracks,', parsed.bpm, 'BPM');
+      midiTempo = parsed.bpm;
+      midiGrid = midiToGrid(parsed);
+      drawGrid(midiGrid, 'midi-grid-canvas');
+      midiImageSection.classList.remove('hidden');
+      // Hide image→music sections
+      canvasSection.classList.add('hidden');
+      scoreSection.classList.add('hidden');
+      invertSection.classList.add('hidden');
+    } catch(err) {
+      console.error('MIDI parse error:', err);
+      alert('Could not parse MIDI file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+midiPlayBtn.addEventListener('click', playMidiGrid);
+midiStopBtn.addEventListener('click', () => {
+  stopPlayback();
+  if (midiGrid) drawGrid(midiGrid, 'midi-grid-canvas');
 });
