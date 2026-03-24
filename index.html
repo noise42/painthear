@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synesthesia Composer</title>
+  <meta name="description" content="Transform paintings into classical sheet music with invertible pixel-to-note mapping">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.1/dist/abcjs-basic-min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Synesthesia Composer</h1>
+      <p class="subtitle">Painting → Classical Sheet Music</p>
+    </div>
+  </header>
+
+  <main>
+    <!-- Upload Section -->
+    <section id="upload-section" class="glass-panel">
+      <div id="drop-zone">
+        <span class="drop-icon">🎨</span>
+        <p>Drop a painting here or <label for="file-input" class="file-label">browse</label></p>
+        <input type="file" id="file-input" accept="image/*" hidden>
+      </div>
+      <div class="divider-or"><span>OR</span></div>
+      <div id="midi-drop-zone">
+        <span class="drop-icon">🎹</span>
+        <p>Drop a MIDI file to generate a painting <label for="midi-file-input" class="file-label">browse</label></p>
+        <input type="file" id="midi-file-input" accept=".mid,.midi" hidden>
+      </div>
+    </section>
+
+    <!-- Canvas Section -->
+    <section id="canvas-section" class="glass-panel hidden">
+      <div class="canvas-row">
+        <div class="canvas-card">
+          <h3>Original</h3>
+          <canvas id="preview-canvas"></canvas>
+        </div>
+        <div class="canvas-card">
+          <h3>Chroma Grid (32×32)</h3>
+          <canvas id="grid-canvas" width="512" height="512"></canvas>
+        </div>
+      </div>
+      <div class="stats-bar">
+        <span id="stat-time"></span>
+        <span id="stat-tempo"></span>
+        <span id="stat-key"></span>
+      </div>
+      <div class="title-row">
+        <label for="score-title">Score Title:</label>
+        <input type="text" id="score-title" placeholder="Synesthesia Composition" value="">
+      </div>
+      <div class="btn-row">
+        <button id="compose-btn" class="primary-btn">🎼 Compose</button>
+      </div>
+    </section>
+
+    <!-- Sheet Music Section -->
+    <section id="score-section" class="glass-panel hidden">
+      <h2>Score</h2>
+      <div id="paper"></div>
+      <div class="btn-row">
+        <button id="play-btn" class="primary-btn">▶ Play</button>
+        <button id="stop-btn" class="secondary-btn">■ Stop</button>
+        <button id="download-btn" class="secondary-btn">⬇ Download MIDI</button>
+        <button id="invert-btn" class="secondary-btn">🔄 Invert to Image</button>
+      </div>
+    </section>
+
+    <!-- Inverted Image Section -->
+    <section id="invert-section" class="glass-panel hidden">
+      <h2>Reconstructed Image</h2>
+      <canvas id="invert-canvas" width="512" height="512"></canvas>
+    </section>
+    <!-- MIDI-Generated Image Section -->
+    <section id="midi-image-section" class="glass-panel hidden">
+      <h2>Generated Painting</h2>
+      <div class="canvas-row">
+        <div class="canvas-card">
+          <h3>MIDI → Painting (32×32)</h3>
+          <canvas id="midi-grid-canvas" width="512" height="512"></canvas>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="midi-play-btn" class="primary-btn">▶ Play with Cursor</button>
+        <button id="midi-stop-btn" class="secondary-btn">■ Stop</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
