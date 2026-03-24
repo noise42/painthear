@@ -344,11 +344,23 @@ function buildMidiFile(grid, tempo, title) {
 
   const tracks = [];
 
-  // Track 0: conductor (tempo + title)
+  // Track 0: conductor (tempo + title + RGB metadata)
   const t0 = [];
   t0.push(...textEvent(0x03, title)); // Track name
   const usPerQN = Math.round(60000000 / tempo);
   t0.push(...vlq(0), 0xFF, 0x51, 0x03, (usPerQN>>16)&0xFF, (usPerQN>>8)&0xFF, usPerQN&0xFF);
+
+  // Embed RGB grid metadata for perfect roundtrip inversion
+  // Encode the entire 32×32 grid as compact hex string
+  let rgbHex = 'SYNRGB:';
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const p = grid[y][x];
+      rgbHex += ((1<<24)|(p.r<<16)|(p.g<<8)|p.b).toString(16).slice(1);
+    }
+  }
+  t0.push(...textEvent(0x01, rgbHex)); // Text event with RGB data
+
   t0.push(...vlq(0), 0xFF, 0x2F, 0x00);
   tracks.push(t0);
 
@@ -668,6 +680,7 @@ function parseMidi(arrayBuffer) {
 
   let tempo = 500000; // default 120 BPM
   const tracks = [];
+  const textEvents = []; // Collect text meta events
 
   for (let t = 0; t < nTracks; t++) {
     const trkId = readStr(4); // "MTrk"
@@ -699,6 +712,12 @@ function parseMidi(arrayBuffer) {
         const metaLen = readVLQ();
         if (metaType === 0x51 && metaLen === 3) {
           tempo = (data[pos]<<16)|(data[pos+1]<<8)|data[pos+2];
+        }
+        if (metaType === 0x01 || metaType === 0x03) {
+          // Text event or track name — collect for RGB metadata detection
+          let txt = '';
+          for (let i = 0; i < metaLen; i++) txt += String.fromCharCode(data[pos + i]);
+          textEvents.push(txt);
         }
         pos += metaLen;
       } else if (type === 0x90) {
@@ -736,7 +755,31 @@ function parseMidi(arrayBuffer) {
   }
 
   const bpm = Math.round(60000000 / tempo);
-  return { tracks, tpq, bpm };
+
+  // Check for embedded RGB metadata
+  let embeddedGrid = null;
+  for (const txt of textEvents) {
+    if (txt.startsWith('SYNRGB:')) {
+      const hexStr = txt.slice(7);
+      if (hexStr.length === GRID * GRID * 6) {
+        embeddedGrid = Array.from({length: GRID}, () => Array(GRID));
+        let idx = 0;
+        for (let y = 0; y < GRID; y++) {
+          for (let x = 0; x < GRID; x++) {
+            const hex = hexStr.slice(idx, idx + 6);
+            embeddedGrid[y][x] = {
+              r: parseInt(hex.slice(0,2), 16),
+              g: parseInt(hex.slice(2,4), 16),
+              b: parseInt(hex.slice(4,6), 16)
+            };
+            idx += 6;
+          }
+        }
+      }
+    }
+  }
+
+  return { tracks, tpq, bpm, embeddedGrid };
 }
 
 // ---- MIDI notes → 32×32 grid ----
