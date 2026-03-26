@@ -21,16 +21,21 @@
   <main>
     <!-- Upload Section -->
     <section id="upload-section" class="glass-panel">
-      <div id="drop-zone">
-        <span class="drop-icon">🎨</span>
-        <p>Drop a painting here or <label for="file-input" class="file-label">browse</label></p>
-        <input type="file" id="file-input" accept="image/*" hidden>
-      </div>
-      <div class="divider-or"><span>OR</span></div>
-      <div id="midi-drop-zone">
-        <span class="drop-icon">🎹</span>
-        <p>Drop a MIDI file to generate a painting <label for="midi-file-input" class="file-label">browse</label></p>
-        <input type="file" id="midi-file-input" accept=".mid,.midi" hidden>
+      <div id="drop-zone" class="upload-card">
+        <div class="drop-icon-row">
+          <span class="drop-icon">🎨</span>
+          <span class="drop-icon">🎹</span>
+        </div>
+        <p>Drop a <strong>Painting</strong> or <strong>MIDI File</strong> here</p>
+        <p class="secondary-text">or choose a file from your computer</p>
+        
+        <div class="upload-actions">
+          <button class="primary-btn" onclick="document.getElementById('file-input').click()">🖼 Browse Image</button>
+          <button class="secondary-btn" onclick="document.getElementById('midi-input').click()">🎶 Browse MIDI</button>
+        </div>
+        
+        <input type="file" id="file-input" accept="image/*" class="hidden">
+        <input type="file" id="midi-input" accept=".mid,.midi" class="hidden">
       </div>
     </section>
 
@@ -98,6 +103,6 @@
     <p>Created with ❤️ by <strong>Marco Pietrosanto</strong> & <strong>Antigravity (AI)</strong> • 2026</p>
   </footer>
 
-  <script src="app.js"></script>
+  <script type="module" src="main.js?v=2"></script>
 </body>
 </html>

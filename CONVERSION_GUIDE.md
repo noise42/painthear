@@ -1,67 +1,69 @@
-# The Synesthesia Composer: Image → Music Mapping Guide
+# The Synesthesia Composer: Image ↔ Music Protocol (v2.0)
 
-The **Synesthesia Composer** is a deterministic, invertible system that translates light and color into 4-voice classical sheet music. Unlike traditional "artistic" mappings, this system follows a strict mathematical protocol that allows a musical score to be transformed back into its original visual essence without hidden metadata.
-
----
-
-## 1. Grid Abstraction: The 32×32 Matrix
-The process begins by reducing any image to a **32×32 pixel grid**.
-- **The X-Axis (Time):** Each column represents one musical measure (in 4/4 time).
-- **The Y-Axis (Harmony):** The 32 rows are divided into 4 classical voices:
-  - **Soprano (Rows 0-7)**
-  - **Alto (Rows 8-15)**
-  - **Tenor (Rows 16-23)**
-  - **Bass (Rows 24-31)**
+The **Synesthesia Composer** is a deterministic, 100% invertible system that translates visual art into 4-voice classical counterpoint. This guide documents the mathematical rules for the professional-grade **OKLch** mapping and the **Composition-Native Metadata** system.
 
 ---
 
-## 2. The Color-to-Music Protocol
-Each pixel's **HSL** (Hue, Saturation, Lightness) value is mapped to a musical property:
+## 1. Perceptual Uniformity: The OKLch Engine
+Unlike standard HSL, we use the **OKLch** color space to ensure that the musical intensity perfectly matches human visual perception.
 
-### **A. Pitch ↔ Hue**
-The 360-degree color wheel is mapped geometrically to a voice's pitch range:
-- **Red (0°/360°):** The lowest note of the voice's pitch range.
-- **Green (120°):** The middle of the range.
-- **Blue (240°):** The upper register.
-- **Purple (300°+):** The highest brilliance.
-*The pitch is snapped to the nearest note in the current scale (Major, Minor, Dorian, or Lydian).*
+### **A. Pitch ↔ Hue (The Color Wheel)**
+The 360° hue circle is mapped geometrically to each voice's specific MIDI range:
+- **Red (0°/360°):** Tonic/Low register.
+- **Green (120°):** Medial register.
+- **Blue (240°):** High register.
+- **Linear Residuals:** To ensure 100% color accuracy, the exact "Hue-to-Note" error is stored in **Pitch Bend** messages (±50 cents). This allows the reconstruction engine to restore the original hue with infinite precision.
 
-### **B. Velocity (Dynamics) ↔ Saturation**
-The "vividness" of the color dictates how loudly the note is played:
-- **Neon/Saturated Colors:** Fortissimo (loud, sharp).
-- **Pastel/Muted Colors:** Pianissimo (soft, gentle).
+### **B. Velocity (Dynamics) ↔ Chroma**
+The "Purity" or "Vividness" of a color determines the MIDI Velocity (30–127):
+- **Neon/Vibrant Colors:** Higher Chroma → High Velocity (Fortissimo).
+- **Muted/Neutral Colors:** Low Chroma → Low Velocity (Pianissimo).
 
-### **C. Duration & Legato ↔ Lightness**
-The brightness of the pixel determines the note's length:
-- **Brilliant Pixels:** Notes are held longer (using ties and slurs).
-- **Dark/Average Pixels:** Short eighth notes (staccato).
-
----
-
-## 3. Harmonic Structure: Full vs. Temporary Modulations
-The system analyzes the image in 8-measure blocks to provide musical consistency:
-- **Full Modulations:** Every 8 measures, the "Sectional Key" is recalculated. If the overall color temperature of the painting shifts from Blue to Red, the **Key Signature** changes (e.g., from C Major to G Major).
-- **Temporary Modulations (Accidentals):** If a single column has a sudden, intense "splash" of color that diverges from the section's hue, the engine creates **Accidentals** (sharps and flats) for that measure only, without Changing the key signature.
+### **C. Rhythmic Phrasing ↔ Lightness**
+We use a 4-level **Rhythmic Grammar** determined by the OKLch Lightness (L) value:
+- **L ≥ 0.85:** Whole Notes (Maximum Luminous Presence).
+- **L ≥ 0.70:** Half Notes.
+- **L ≥ 0.45:** Quarter Notes.
+- **L < 0.45:** Eighth Notes (Staccato/Detail).
 
 ---
 
-## 4. Musical Silence (Pauses)
-A painting is not just color; it is also space.
-- **Achromatic Pixels:** If a pixel has a Saturation of less than 15% (pure whites, grays, or blacks), it is mathematically encoded as a **Musical Rest**.
-- This creates "breathing room" in the composition wherever the image contains empty space or gray clouds.
+## 2. 4-Voice Classical Architecture
+The system reduces the image into a **32×32 grid** where each column represents one measure (4/4) and rows are assigned to 4 SATB voices:
+- **Soprano (Rows 0-7):** MIDI 60–79 (Treble Clef).
+- **Alto (Rows 8-15):** MIDI 52–72 (Treble Clef).
+- **Tenor (Rows 16-23):** MIDI 45–64 (Treble-8 Clef).
+- **Bass (Rows 24-31):** MIDI 36–55 (Bass Clef).
 
 ---
 
-## 5. Invertible Timbre (Ensembles)
-The overall "vibe" of the painting selects the instrument ensemble recorded in the MIDI file:
-- **🔥 Warm (Reds/Oranges):** 🎺 **Brass Section** (Square/Sawtooth waves).
-- **❄️ Cool (Blues/Greens):** 🪈 **Woodwinds** (Sine/Triangle waves).
-- **🌑 Dark/Moody:** 🎻 **String Quartet** (Sawtooth/Triangle).
-- **🎹 Neutral:** **Keyboards/Mallets**.
+## 3. Harmonic Intelligence (Circle of Fifths)
+The engine analyzes the image in 8-measure blocks to detect a **Sectional Key**:
+- **Hue Distribution:** The "circular mean" of hues determines the key (e.g., Cool Blues → C Major/Dorian, Warm Reds → G Major).
+- **Mode Selection:** Average Lightness determines if the section is **Major** (Bright) or **Minor** (Moody).
+- **Voice Leading:** Notes are automatically transposed by octaves to minimize melodic leaps and maintain smooth vocal lines.
 
-**The Loop:** When the resulting MIDI file is uploaded back into the app, the parser detects these instruments and applies a **Color Grading Filter** to the reconstructed image, restoring the original warmth or coolness.
+---
+
+## 4. Inversion Assurance: The "Composition DNA"
+To achieve 100% reconstruction without hidden files, all visual metadata is **encoded into the musical composition** using MIDI Control Change (CC) messages:
+
+| Controller | Data Encoded | Purpose |
+| :--- | :--- | :--- |
+| **CC #85** | Voice Leading Delta | Stores octave shifts made for melodic smoothness. |
+| **CC #86** | Parallel Motion Filter | Logs corrections made to prevent parallel fifths/octaves. |
+| **CC #100/101** | Original Width | Reconstructs the original image's horizontal proportion. |
+| **CC #102/103** | Original Height | Reconstructs the original image's vertical proportion. |
+| **CC #104-106** | Background RGB | Pre-fills the reconstruction canvas with the original palette tone. |
+
+---
+
+## 5. Selective Silence (Pauses)
+A pixel is treated as a **Musical Rest** if it meets the following "Silence Criteria":
+- **L < 0.15 OR C < 0.05** (Dark or deeply desaturated regions).
+- This creates professional architectural space in the score while the **CC #104-106** metadata ensures the visual reconstruction remains faithful to the original background tone.
 
 ---
 
 ## 6. The "Musical Shadow"
-Because the mapping is mathematical, you can click **"Preview Musical Shadow"** to see exactly how the music interprets your painting. This is the **lossless core** of the system: the image is not stored anywhere; it is *calculated* directly from the notes you hear.
+The **Musical Shadow** is the visual proof-of-work. By uploading a generated MIDI file, the system reads the "DNA" (CC messages and Note data) to mathematically redraw the original painting. The image is not a preview; it is the physical manifestation of the music itself.

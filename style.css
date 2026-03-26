@@ -62,18 +62,41 @@ main {
 
 /* Upload */
 #drop-zone {
-  border: 2px dashed var(--glass-border);
-  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 3rem;
-  text-align: center;
+  border: 2px dashed rgba(255,255,255,0.2);
+  border-radius: 1.5rem;
+  background: rgba(255,255,255,0.03);
+  transition: all 0.3s ease;
   cursor: pointer;
-  transition: border-color 0.3s, background 0.3s;
+  text-align: center;
 }
-#drop-zone:hover, #drop-zone.dragover {
+
+.upload-card:hover, #drop-zone.dragover {
   border-color: var(--accent);
-  background: rgba(167,139,250,0.05);
+  background: rgba(167, 139, 250, 0.08);
+  transform: translateY(-2px);
 }
-.drop-icon { font-size: 3rem; display: block; margin-bottom: 1rem; }
+
+.drop-icon-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.drop-icon {
+  font-size: 3.5rem;
+  filter: drop-shadow(0 0 10px rgba(167, 139, 250, 0.5));
+}
+
+.upload-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
 .file-label {
   color: var(--accent);
   cursor: pointer;
@@ -141,8 +164,11 @@ main {
   border: 1px solid var(--glass-border);
   image-rendering: pixelated;
   max-width: 256px;
+  max-height: 256px;
   width: 100%;
   height: auto;
+  object-fit: contain;
+  background: #0f0f14;
 }
 
 .stats-bar {
@@ -232,11 +258,17 @@ main {
 
 /* Score */
 #paper {
-  background: white;
+  background: #ffffff !important;
+  color: #000000 !important;
   border-radius: 8px;
-  padding: 1rem;
+  padding: 1.5rem;
   min-height: 200px;
   overflow-x: auto;
+  opacity: 1 !important;
+}
+
+#paper svg {
+  background: #ffffff !important;
 }
 
 #score-section h2, #invert-section h2 {
@@ -249,8 +281,13 @@ main {
   border: 1px solid var(--glass-border);
   image-rendering: pixelated;
   max-width: 256px;
+  max-height: 256px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
   display: block;
   margin: 0 auto;
+  background: #0f0f14;
 }
 
 @media (max-width: 600px) {
