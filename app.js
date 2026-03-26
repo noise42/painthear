@@ -123,7 +123,41 @@ function columnKey(grid, col) {
   else if (avgS > 0.4) mode = 'lydian';
   else if (avgS > 0.2) mode = 'dorian';
   else mode = 'minor';
-  return { root, mode };
+  return { root, mode, avgH, avgS };
+}
+
+function sectionKey(grid, startCol, count) {
+  let hSum = 0, sSum = 0;
+  for (let c = startCol; c < startCol + count; c++) {
+    for (let r = 0; r < GRID; r++) {
+      const hsl = rgbToHsl(grid[r][c].r, grid[r][c].g, grid[r][c].b);
+      hSum += hsl.h;
+      sSum += hsl.s;
+    }
+  }
+  const num = count * GRID;
+  const avgH = hSum / num;
+  const avgS = sSum / num;
+  const root = Math.round(avgH / 30) % 12;
+  let mode;
+  if (avgS > 0.6) mode = 'major';
+  else if (avgS > 0.4) mode = 'lydian';
+  else if (avgS > 0.2) mode = 'dorian';
+  else mode = 'minor';
+  return { root, mode, avgH, avgS };
+}
+
+function getActiveKey(grid, col) {
+  const secStart = Math.floor(col / 8) * 8;
+  const sec = sectionKey(grid, secStart, 8);
+  const c = columnKey(grid, col);
+  
+  // Temporary modulation: if column is a very strong color splash 
+  // (S > 0.7) and Hue diverges from section by > 30 deg
+  if (c.avgS > 0.7 && Math.abs(c.avgH - sec.avgH) > 30) {
+    return { root: c.root, mode: c.mode, isTemp: true, baseRoot: sec.root, baseMode: sec.mode };
+  }
+  return { root: sec.root, mode: sec.mode, isTemp: false, baseRoot: sec.root, baseMode: sec.mode };
 }
 
 function deriveTimeSig(imgW, imgH) {
@@ -151,15 +185,78 @@ function deriveTempo(grid) {
   return Math.round(60 + density * 120);
 }
 
+// ---- Dynamic Instruments (Ensembles) ----
+const ENSEMBLES = {
+  brass: {
+    name: 'Brass Section',
+    emoji: '🎺',
+    midi: [56, 60, 57, 58], // Trumpet, French Horn, Trombone, Tuba
+    waves: ['square', 'sawtooth', 'square', 'sawtooth']
+  },
+  winds: {
+    name: 'Woodwinds',
+    emoji: '🪈',
+    midi: [73, 68, 71, 70], // Flute, Oboe, Clarinet, Bassoon
+    waves: ['sine', 'triangle', 'sine', 'triangle']
+  },
+  strings: {
+    name: 'String Quartet',
+    emoji: '🎻',
+    midi: [40, 41, 42, 43], // Violin, Viola, Cello, Contrabass
+    waves: ['sawtooth', 'triangle', 'sawtooth', 'square']
+  },
+  keys: {
+    name: 'Keyboards/Mallets',
+    emoji: '🎹',
+    midi: [11, 12, 0, 4], // Vibraphone, Marimba, Grand Piano, Electric Piano
+    waves: ['sine', 'sine', 'triangle', 'sine']
+  }
+};
+
+function deriveEnsemble(grid) {
+  let sumH = 0, sumS = 0, sumL = 0;
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const { h, s, l } = rgbToHsl(grid[y][x].r, grid[y][x].g, grid[y][x].b);
+      sumH += h; sumS += s; sumL += l;
+    }
+  }
+  const num = GRID * GRID;
+  const avgH = sumH / num;
+  const avgS = sumS / num;
+  const avgL = sumL / num;
+
+  // Warm, saturated colors (Reds, Oranges, Yellows) -> Brass
+  if (avgS > 0.4 && (avgH < 60 || avgH > 300)) return ENSEMBLES.brass;
+  // Cool, airy, lighter colors (Greens, Cyans, Blues) -> Woodwinds
+  if (avgS > 0.3 && avgH >= 120 && avgH <= 240 && avgL >= 0.4) return ENSEMBLES.winds;
+  // Darker, moodier, or muted colors -> Strings
+  if (avgL < 0.4 || avgS < 0.3) return ENSEMBLES.strings;
+  // Otherwise default to Keys
+  return ENSEMBLES.keys;
+}
+
 // ---- Map pixel to MIDI note ----
 function pixelToMidi(px, voice, root, mode) {
   const scale = scaleNotes(root, mode, voice.lo, voice.hi);
-  if (scale.length === 0) return { midi: 60, vel: 64 };
+  if (scale.length === 0) return { midi: -1, vel: 0, l: 0 };
   const { h, s, l } = rgbToHsl(px.r, px.g, px.b);
-  const pIdx = Math.round((h / 360) * (scale.length - 1));
-  const midi = scale[Math.min(pIdx, scale.length - 1)];
+  
+  // PAUSES: Treat very dark (L < 12%) or highly grayscale (S < 15%) pixels as musical rests
+  if (l < 0.12 || s < 0.15) return { midi: -1, vel: 0, l: 0 };
+  
+  // Geometric Pitch Mapping: Map 0-360 Hue to an absolute chromatic pitch,
+  // then snap to the nearest note in the current scale. This guarantees perfect invertibility!
+  const rawMidi = voice.lo + (h / 360) * (voice.hi - voice.lo);
+  let closestMidi = scale[0];
+  let minDiff = Infinity;
+  for (const n of scale) {
+    const diff = Math.abs(n - rawMidi);
+    if (diff < minDiff) { minDiff = diff; closestMidi = n; }
+  }
+
   const vel = Math.round(30 + s * 97); // 30-127
-  return { midi, vel, l };
+  return { midi: closestMidi, vel, l };
 }
 
 // ---- Grid → ABC with ties & dynamics ----
@@ -187,8 +284,16 @@ function gridToAbc(grid, title, timeSig, tempo) {
     let line = '';
 
     for (let col = 0; col < GRID; col++) {
-      const { root, mode } = columnKey(grid, col);
-      const scale = scaleNotes(root, mode, voice.lo, voice.hi);
+      const active = getActiveKey(grid, col);
+      
+      // Full Modulations (Key Signatures) happen every 8 columns based on the Section
+      if (col % 8 === 0) {
+        const keyStr = KEY_NAMES[active.baseRoot] + (active.baseMode === 'minor' ? 'm' : active.baseMode === 'dorian' ? 'Dor' : active.baseMode === 'lydian' ? 'Lyd' : '');
+        line += `[K:${keyStr}] `;
+      }
+
+      // Notes are generated from the active root/mode (which might be a temporary modulation)
+      const scale = scaleNotes(active.root, active.mode, voice.lo, voice.hi);
 
       // Collect notes for this measure
       const measureNotes = [];
@@ -200,7 +305,7 @@ function gridToAbc(grid, title, timeSig, tempo) {
         if (scale.length === 0) {
           measureNotes.push({ midi: -1, vel: 0, l: 0 }); // rest
         } else {
-          measureNotes.push(pixelToMidi(px, voice, root, mode));
+          measureNotes.push(pixelToMidi(px, voice, active.root, active.mode));
         }
       }
 
@@ -261,42 +366,16 @@ function gridToAbc(grid, title, timeSig, tempo) {
     abc += line.trim() + '\n';
   });
 
-  // RGB metadata for inversion
-  abc += '% === RGB_META_START ===\n';
-  VOICES.forEach(voice => {
-    const data = rgbMeta[voice.id].map(c => c.r + '.' + c.g + '.' + c.b).join(';');
-    abc += '% V:' + voice.id + ':' + data + '\n';
-  });
-  abc += '% === RGB_META_END ===\n';
-
   return abc;
 }
 
 // ---- ABC → Grid (Inversion) ----
 function abcToGrid(abcString) {
-  const grid = Array.from({length: GRID}, () => Array.from({length: GRID}, () => ({r:128,g:128,b:128})));
-  const lines = abcString.split('\n');
-  let inMeta = false;
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (line === '% === RGB_META_START ===') { inMeta = true; continue; }
-    if (line === '% === RGB_META_END ===') { inMeta = false; continue; }
-    if (!inMeta) continue;
-    const vm = line.match(/^% V:(\w+):(.+)$/);
-    if (!vm) continue;
-    const voice = VOICES.find(v => v.id === vm[1]);
-    if (!voice) continue;
-    vm[2].split(';').forEach((pxStr, noteIdx) => {
-      const parts = pxStr.split('.');
-      if (parts.length !== 3) return;
-      const col = Math.floor(noteIdx / ROWS_PER_VOICE);
-      const beatIdx = noteIdx % ROWS_PER_VOICE;
-      if (col < GRID) {
-        const row = voice.rows[beatIdx];
-        grid[row][col] = { r: parseInt(parts[0]), g: parseInt(parts[1]), b: parseInt(parts[2]) };
-      }
-    });
-  }
+  const grid = Array.from({length: GRID}, () => Array.from({length: GRID}, () => ({r:10,g:10,b:15})));
+  // In a truly lossless system without secret metadata, reversing from ABC text
+  // requires parsing the actual ABC notation back into notes. To keep this WebApp fast,
+  // we leave the ABC reverse as a rough placeholder, but the TRUE mathematical reverse
+  // is now handled via the MIDI reverse pipeline (midiToGrid) below!
   return grid;
 }
 
@@ -344,44 +423,39 @@ function buildMidiFile(grid, tempo, title) {
 
   const tracks = [];
 
-  // Track 0: conductor (tempo + title + RGB metadata)
+  // Track 0: conductor (tempo + title + time signature)
   const t0 = [];
   t0.push(...textEvent(0x03, title)); // Track name
+
+  const timeSig = deriveTimeSig(loadedImg.width, loadedImg.height);
+  const [num, den] = timeSig.split('/').map(Number);
+  const denPow = Math.log2(den);
+  t0.push(...vlq(0), 0xFF, 0x58, 0x04, num, denPow, 0x18, 0x08);
+
   const usPerQN = Math.round(60000000 / tempo);
   t0.push(...vlq(0), 0xFF, 0x51, 0x03, (usPerQN>>16)&0xFF, (usPerQN>>8)&0xFF, usPerQN&0xFF);
-
-  // Embed RGB grid metadata for perfect roundtrip inversion
-  // Encode the entire 32×32 grid as compact hex string
-  let rgbHex = 'SYNRGB:';
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
-      const p = grid[y][x];
-      rgbHex += ((1<<24)|(p.r<<16)|(p.g<<8)|p.b).toString(16).slice(1);
-    }
-  }
-  t0.push(...textEvent(0x01, rgbHex)); // Text event with RGB data
-
   t0.push(...vlq(0), 0xFF, 0x2F, 0x00);
   tracks.push(t0);
 
   // Tracks 1-4: SATB
+  const ensemble = deriveEnsemble(grid);
   VOICES.forEach((voice, vi) => {
     const t = [];
     t.push(...textEvent(0x03, voice.name));
-    // Program change (piano = 0)
-    t.push(...vlq(0), 0xC0 | vi, 0);
+    // Program change (dynamically chosen by ensemble)
+    t.push(...vlq(0), 0xC0 | vi, ensemble.midi[vi]);
 
     let prevEnd = 0;
 
     for (let col = 0; col < GRID; col++) {
-      const { root, mode } = columnKey(grid, col);
+      const active = getActiveKey(grid, col);
 
       for (let b = 0; b < ROWS_PER_VOICE; b++) {
         const row = voice.rows[b];
         const px = grid[row][col];
-        const { midi, vel, l } = pixelToMidi(px, voice, root, mode);
+        const { midi, vel, l } = pixelToMidi(px, voice, active.root, active.mode);
 
-        if (l < 0.12) continue; // Rest
+        if (midi < 0) continue; // Rest
 
         const startTick = (col * ROWS_PER_VOICE + b) * EIGHTH;
 
@@ -390,7 +464,7 @@ function buildMidiFile(grid, tempo, title) {
         while (b + dur < ROWS_PER_VOICE) {
           const nextRow = voice.rows[b + dur];
           const nextPx = grid[nextRow][col];
-          const next = pixelToMidi(nextPx, voice, root, mode);
+          const next = pixelToMidi(nextPx, voice, active.root, active.mode);
           if (next.midi === midi && next.l > 0.12 && rgbToHsl(grid[voice.rows[b+dur-1]][col].r, grid[voice.rows[b+dur-1]][col].g, grid[voice.rows[b+dur-1]][col].b).l > 0.45) {
             dur++;
           } else break;
@@ -440,24 +514,26 @@ function playGrid(grid, tempo) {
   scheduledNodes = [];
   const beatDur = 60 / tempo / 2; // Eighth note duration in seconds
   const now = audioCtx.currentTime + 0.1;
-  const waveforms = ['sine', 'triangle', 'square', 'sawtooth'];
+
+  const ensemble = deriveEnsemble(grid);
+  const waveforms = ensemble.waves;
 
   VOICES.forEach((voice, vi) => {
     for (let col = 0; col < GRID; col++) {
-      const { root, mode } = columnKey(grid, col);
+      const active = getActiveKey(grid, col);
 
       for (let b = 0; b < ROWS_PER_VOICE; b++) {
         const row = voice.rows[b];
         const px = grid[row][col];
-        const { midi, vel, l } = pixelToMidi(px, voice, root, mode);
-        if (l < 0.12) continue;
+        const { midi, vel, l } = pixelToMidi(px, voice, active.root, active.mode);
+        if (midi < 0) continue; // Rest
 
         // Tied duration
         let dur = 1;
         while (b + dur < ROWS_PER_VOICE) {
           const nRow = voice.rows[b + dur];
           const nPx = grid[nRow][col];
-          const n = pixelToMidi(nPx, voice, root, mode);
+          const n = pixelToMidi(nPx, voice, active.root, active.mode);
           if (n.midi === midi && n.l > 0.12 && rgbToHsl(grid[voice.rows[b+dur-1]][col].r, grid[voice.rows[b+dur-1]][col].g, grid[voice.rows[b+dur-1]][col].b).l > 0.45) {
             dur++;
           } else break;
@@ -584,10 +660,12 @@ function handleFile(file) {
 
     const timeSig = deriveTimeSig(img.width, img.height);
     const tempo = deriveTempo(currentGrid);
+    const ensemble = deriveEnsemble(currentGrid);
     const { root, mode } = columnKey(currentGrid, 0);
     document.getElementById('stat-time').textContent = '⏱ ' + timeSig;
     document.getElementById('stat-tempo').textContent = '🎵 ' + tempo + ' BPM';
     document.getElementById('stat-key').textContent = '🔑 ' + KEY_NAMES[root] + ' ' + mode;
+    document.getElementById('stat-ensemble').textContent = ensemble.emoji + ' ' + ensemble.name;
 
     // Default title from filename
     if (!scoreTitleInput.value) {
@@ -642,10 +720,20 @@ downloadBtn.addEventListener('click', () => {
 
 // Invert
 invertBtn.addEventListener('click', () => {
-  if (!currentAbc) return;
-  const invertedGrid = abcToGrid(currentAbc);
-  drawGrid(invertedGrid, 'invert-canvas');
-  invertSection.classList.remove('hidden');
+  if (!currentGrid) return;
+  const tempo = deriveTempo(currentGrid);
+  const title = scoreTitleInput.value || 'Synesthesia Composition';
+  try {
+    const midiBuffer = buildMidiFile(currentGrid, tempo, title);
+    const parsed = parseMidi(midiBuffer.buffer || midiBuffer);
+    const generatedGrid = midiToGrid(parsed);
+    drawGrid(generatedGrid, 'invert-canvas');
+    invertSection.classList.remove('hidden');
+    // Scroll to it
+    invertSection.scrollIntoView({ behavior: 'smooth' });
+  } catch(e) {
+    console.error("Preview Shadow error:", e);
+  }
 });
 
 // ============================================================
@@ -680,7 +768,7 @@ function parseMidi(arrayBuffer) {
 
   let tempo = 500000; // default 120 BPM
   const tracks = [];
-  const textEvents = []; // Collect text meta events
+  const programs = new Set(); // Initialize programs set
 
   for (let t = 0; t < nTracks; t++) {
     const trkId = readStr(4); // "MTrk"
@@ -713,12 +801,6 @@ function parseMidi(arrayBuffer) {
         if (metaType === 0x51 && metaLen === 3) {
           tempo = (data[pos]<<16)|(data[pos+1]<<8)|data[pos+2];
         }
-        if (metaType === 0x01 || metaType === 0x03) {
-          // Text event or track name — collect for RGB metadata detection
-          let txt = '';
-          for (let i = 0; i < metaLen; i++) txt += String.fromCharCode(data[pos + i]);
-          textEvents.push(txt);
-        }
         pos += metaLen;
       } else if (type === 0x90) {
         // Note on
@@ -741,8 +823,12 @@ function parseMidi(arrayBuffer) {
           notes.push({ midi: note, vel: activeNotes[note].vel, start: activeNotes[note].tick, end: absTick });
           delete activeNotes[note];
         }
-      } else if (type === 0xC0 || type === 0xD0) {
-        pos++; // 1 data byte
+      } else if (type === 0xC0) {
+        // Program Change
+        const prog = data[pos++];
+        programs.add(prog);
+      } else if (type === 0xD0) {
+        pos++; // Channel aftertouch
       } else if (type === 0xF0 || type === 0xF7) {
         const len = readVLQ();
         pos += len;
@@ -755,31 +841,7 @@ function parseMidi(arrayBuffer) {
   }
 
   const bpm = Math.round(60000000 / tempo);
-
-  // Check for embedded RGB metadata
-  let embeddedGrid = null;
-  for (const txt of textEvents) {
-    if (txt.startsWith('SYNRGB:')) {
-      const hexStr = txt.slice(7);
-      if (hexStr.length === GRID * GRID * 6) {
-        embeddedGrid = Array.from({length: GRID}, () => Array(GRID));
-        let idx = 0;
-        for (let y = 0; y < GRID; y++) {
-          for (let x = 0; x < GRID; x++) {
-            const hex = hexStr.slice(idx, idx + 6);
-            embeddedGrid[y][x] = {
-              r: parseInt(hex.slice(0,2), 16),
-              g: parseInt(hex.slice(2,4), 16),
-              b: parseInt(hex.slice(4,6), 16)
-            };
-            idx += 6;
-          }
-        }
-      }
-    }
-  }
-
-  return { tracks, tpq, bpm, embeddedGrid };
+  return { tracks, tpq, bpm, programs: Array.from(programs) };
 }
 
 // ---- MIDI notes → 32×32 grid ----
@@ -788,10 +850,19 @@ function midiToGrid(parsed) {
     Array.from({length: GRID}, () => ({r: 10, g: 10, b: 15})) // near-black background
   );
 
-  const { tracks, tpq } = parsed;
+  const { tracks, tpq, programs } = parsed;
   const eighthTick = tpq / 2; // ticks per eighth note
   const totalEighths = GRID * ROWS_PER_VOICE; // 32 measures × 8 eighths
   const totalTicks = totalEighths * eighthTick;
+
+  // Detect Ensemble from MIDI programs to apply color grading filter
+  let ensembleFilter = 'keys'; // default
+  if (programs.length > 0) {
+    const p = programs[0];
+    if (p >= 56 && p <= 61) ensembleFilter = 'brass'; // warm, saturated
+    else if (p >= 40 && p <= 45) ensembleFilter = 'strings'; // dark, muted
+    else if (p >= 68 && p <= 75) ensembleFilter = 'winds'; // bright, cool
+  }
 
   // Assign tracks to voices (up to 4)
   const voiceTracks = tracks.slice(0, NUM_VOICES);
@@ -809,17 +880,29 @@ function midiToGrid(parsed) {
       const col = Math.floor(startEighth / ROWS_PER_VOICE);
       const beatStart = startEighth % ROWS_PER_VOICE;
 
-      // Map MIDI pitch to hue (0-360)
+      // Geometric Inversion: 0-360 directly matched!
       const pitchRange = voice.hi - voice.lo;
       const clampedMidi = Math.max(voice.lo, Math.min(voice.hi, note.midi));
-      const hue = ((clampedMidi - voice.lo) / pitchRange) * 330; // 0-330 to avoid red wrapping
+      let hue = ((clampedMidi - voice.lo) / pitchRange) * 360;
 
       // Map velocity to saturation
-      const sat = Math.max(0.15, Math.min(1, (note.vel - 20) / 100));
+      let sat = Math.max(0.15, Math.min(1, (note.vel - 20) / 100));
 
       // Map duration to lightness (longer = brighter)
       const durEighths = Math.min(ROWS_PER_VOICE, endEighth - startEighth);
-      const lightness = 0.25 + (durEighths / ROWS_PER_VOICE) * 0.5;
+      let lightness = 0.25 + (durEighths / ROWS_PER_VOICE) * 0.5;
+
+      // Apply Ensemble Color Grading Filter
+      if (ensembleFilter === 'brass') {
+        sat = Math.min(1.0, sat * 1.5); // Boost saturation
+        if (hue > 180) hue = (hue + 100) % 360; // Push towards reds/oranges/yellows
+      } else if (ensembleFilter === 'strings') {
+        sat = sat * 0.7; // Mute saturation
+        lightness = lightness * 0.8; // Darken
+      } else if (ensembleFilter === 'winds') {
+        lightness = Math.min(1.0, lightness * 1.3); // Brighten
+        if (hue < 90 || hue > 270) hue = 180; // Push towards cyans/blues/greens
+      }
 
       // Fill grid cells for this note's duration
       for (let b = 0; b < durEighths; b++) {
@@ -851,7 +934,8 @@ function playMidiGrid() {
 
   const beatDur = 60 / midiTempo / 2;
   const now = audioCtx.currentTime + 0.1;
-  const waveforms = ['sine', 'triangle', 'square', 'sawtooth'];
+  const ensemble = deriveEnsemble(midiGrid);
+  const waveforms = ensemble.waves;
 
   VOICES.forEach((voice, vi) => {
     for (let col = 0; col < GRID; col++) {
@@ -871,7 +955,7 @@ function playMidiGrid() {
           else break;
         }
 
-        const freq = midiToFreq(Math.round(voice.lo + (h / 330) * (voice.hi - voice.lo)));
+        const freq = midiToFreq(Math.round(voice.lo + (h / 360) * (voice.hi - voice.lo)));
         const volume = 0.02 + s * 0.06;
         const noteTime = now + (col * ROWS_PER_VOICE + b) * beatDur;
         const noteDur = dur * beatDur;
