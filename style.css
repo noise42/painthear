@@ -209,6 +209,19 @@ main {
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   color: white;
 }
+
+.credits {
+    margin-top: 3rem;
+    padding: 2rem;
+    text-align: center;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.7);
+    border-top: 1px solid var(--glass-border);
+}
+
+.credits strong {
+    color: var(--accent-pink);
+}
 .primary-btn:hover { transform: scale(1.03); filter: brightness(1.1); }
 .secondary-btn {
   background: rgba(255,255,255,0.06);

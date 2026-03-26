@@ -604,14 +604,16 @@ function startPlaybackAnimation(beatDur) {
       ctx.fillStyle = 'rgba(167, 139, 250, 0.3)';
       ctx.fillRect(currentCol * cellW, 0, cellW, c.height);
 
-      // Thin bright scanline at exact sub-beat position
-      const scanY = subBeat * c.height;
+      // 4 distinct scanlines (one per voice) to show simultaneous reading
       ctx.strokeStyle = 'rgba(244, 114, 182, 0.9)';
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(currentCol * cellW, scanY);
-      ctx.lineTo((currentCol + 1) * cellW, scanY);
-      ctx.stroke();
+      for (let vi = 0; vi < NUM_VOICES; vi++) {
+        const scanY = (vi + subBeat) * (c.height / NUM_VOICES);
+        ctx.beginPath();
+        ctx.moveTo(currentCol * cellW, scanY);
+        ctx.lineTo((currentCol + 1) * cellW, scanY);
+        ctx.stroke();
+      }
     }
 
     // Dim future columns slightly less
@@ -1008,14 +1010,16 @@ function startMidiPlaybackAnimation(beatDur) {
       ctx.fillRect(0, 0, currentCol * cellW, c.height);
     }
     if (currentCol < GRID) {
-      ctx.fillStyle = 'rgba(167,139,250,0.3)';
-      ctx.fillRect(currentCol * cellW, 0, cellW, c.height);
-      ctx.strokeStyle = 'rgba(244,114,182,0.9)';
+      // 4 distinct scanlines (one per voice)
+      ctx.strokeStyle = 'rgba(244, 114, 182, 0.9)';
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(currentCol * cellW, subBeat * c.height);
-      ctx.lineTo((currentCol+1) * cellW, subBeat * c.height);
-      ctx.stroke();
+      for (let vi = 0; vi < NUM_VOICES; vi++) {
+        const scanY = (vi + subBeat) * (c.height / NUM_VOICES);
+        ctx.beginPath();
+        ctx.moveTo(currentCol * cellW, scanY);
+        ctx.lineTo((currentCol + 1) * cellW, scanY);
+        ctx.stroke();
+      }
     }
     if (currentCol+1 < GRID) {
       ctx.fillStyle = 'rgba(0,0,0,0.15)';
