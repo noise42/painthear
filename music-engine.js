@@ -5,7 +5,8 @@
 import { rgbToOklch, oklchToRgb, rgbToHsl } from './color.js';
 import { vlq, textEvent } from './midi-core.js';
 
-export const GRID = 32;
+export const GRID_COLS = 128;
+export const GRID_ROWS = 32;
 export const ROWS_PER_VOICE = 8;
 export const NUM_VOICES = 4;
 
@@ -36,15 +37,15 @@ export function scaleNotes(root, mode, lo, hi) {
 
 export function imageToGrid(img) {
   const c = document.createElement('canvas');
-  c.width = c.height = GRID;
+  c.width = GRID_COLS; c.height = GRID_ROWS;
   const ctx = c.getContext('2d');
-  ctx.drawImage(img, 0, 0, GRID, GRID);
-  const d = ctx.getImageData(0, 0, GRID, GRID);
+  ctx.drawImage(img, 0, 0, GRID_COLS, GRID_ROWS);
+  const d = ctx.getImageData(0, 0, GRID_COLS, GRID_ROWS);
   const grid = [];
-  for (let y = 0; y < GRID; y++) {
+  for (let y = 0; y < GRID_ROWS; y++) {
     grid[y] = [];
-    for (let x = 0; x < GRID; x++) {
-      const i = (y*GRID + x)*4;
+    for (let x = 0; x < GRID_COLS; x++) {
+      const i = (y*GRID_COLS + x)*4;
       grid[y][x] = { r: d.data[i], g: d.data[i+1], b: d.data[i+2] };
     }
   }
@@ -58,7 +59,7 @@ export function imageToGrid(img) {
 export function deriveSectionKey(grid, startCol, count) {
   let sinSum = 0, cosSum = 0, lSum = 0;
   for (let c = startCol; c < startCol + count; c++) {
-    for (let r = 0; r < GRID; r++) {
+    for (let r = 0; r < GRID_ROWS; r++) {
       const { L, h } = rgbToOklch(grid[r][c].r, grid[r][c].g, grid[r][c].b);
       const rad = h * Math.PI / 180;
       sinSum += Math.sin(rad);
@@ -66,12 +67,14 @@ export function deriveSectionKey(grid, startCol, count) {
       lSum += L;
     }
   }
-  const num = count * GRID;
+  const num = count * GRID_ROWS;
   const avgRad = Math.atan2(sinSum / num, cosSum / num);
   const avgH = (avgRad * 180 / Math.PI + 360) % 360;
   const avgL = lSum / num;
 
-  const keyIndex = Math.round(avgH / 30) % 12;
+  const binIndex = Math.round(avgH / 30) % 12;
+  const circleOfFifths = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
+  const keyIndex = circleOfFifths[binIndex];
   const mode = avgL >= 0.5 ? 'major' : 'minor';
   
   return { root: keyIndex, mode, avgH, avgL };
@@ -114,13 +117,13 @@ export const ENSEMBLES = {
 
 export function deriveEnsemble(grid) {
   let sumH = 0, sumC = 0, sumL = 0;
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
       const { L, C, h } = rgbToOklch(grid[y][x].r, grid[y][x].g, grid[y][x].b);
       sumH += h; sumC += C; sumL += L;
     }
   }
-  const avgH = sumH / (GRID*GRID), avgC = sumC / (GRID*GRID), avgL = sumL / (GRID*GRID);
+  const avgH = sumH / (GRID_COLS*GRID_ROWS), avgC = sumC / (GRID_COLS*GRID_ROWS), avgL = sumL / (GRID_COLS*GRID_ROWS);
 
   if (avgC > 0.15 && (avgH < 60 || avgH > 300)) return ENSEMBLES.brass;
   if (avgC > 0.12 && avgH >= 120 && avgH <= 240 && avgL >= 0.4) return ENSEMBLES.winds;
@@ -149,7 +152,7 @@ export function deriveTempo(grid) {
     const { L } = rgbToOklch(px.r, px.g, px.b);
     Lsum += L;
   }));
-  const avgL = Lsum / (GRID * GRID);
+  const avgL = Lsum / (GRID_ROWS * GRID_COLS);
   return Math.round(60 + avgL * 120);
 }
 export function columnKey(grid, col) {
@@ -176,7 +179,7 @@ export function gridToAbc(grid, title, timeSig, tempo) {
     let line = '';
     let lastMidi = -1;
 
-    for (let col = 0; col < GRID; col++) {
+    for (let col = 0; col < GRID_COLS; col++) {
       const active = getActiveKey(grid, col);
       if (col % 8 === 0) {
         const kStr = KEY_NAMES[active.baseRoot] + (active.baseMode === 'minor' ? 'm' : '');
@@ -200,13 +203,24 @@ export function gridToAbc(grid, title, timeSig, tempo) {
                 }
             }
             midi = bestMidi;
+            // 8-Semitone Voice-Leading Hard Cap
+            if (Math.abs(midi - lastMidi) > 8) {
+                midi = lastMidi + Math.sign(midi - lastMidi) * 8;
+                let scale = scaleNotes(active.root, active.mode, voice.lo, voice.hi);
+                let closest = scale[0];
+                let md = Infinity;
+                for (let sn of scale) {
+                    if (Math.abs(sn - midi) < md) { md = Math.abs(sn - midi); closest = sn; }
+                }
+                midi = closest;
+            }
         }
         lastMidi = midi;
 
         let grammarDur = 1;
-        if (L >= 0.85) grammarDur = 8;
-        else if (L >= 0.70) grammarDur = 4;
-        else if (L >= 0.45) grammarDur = 2;
+        if (L >= 0.75) grammarDur = 8;
+        else if (L >= 0.50) grammarDur = 4;
+        else if (L >= 0.25) grammarDur = 2;
         
         const maxInMeasure = ROWS_PER_VOICE - b;
         let dur = 1;
@@ -249,14 +263,14 @@ export function midiToGrid(parsed) {
       bgColor = { r: ccs[104] * 2, g: ccs[105] * 2, b: ccs[106] * 2 };
   }
 
-  const grid = Array.from({length: GRID}, () =>
-    Array.from({length: GRID}, () => ({...bgColor}))
+  const grid = Array.from({length: GRID_ROWS}, () =>
+    Array.from({length: GRID_COLS}, () => ({...bgColor}))
   );
   grid.aspectRatio = aspectRatio;
 
   const { tracks, tpq, programs, keySignatures } = parsed;
   const eighthTick = tpq / 2;
-  const totalEighths = GRID * ROWS_PER_VOICE;
+  const totalEighths = GRID_COLS * ROWS_PER_VOICE;
 
   const SF_TO_ROOT = { '0':0, '1':1, '2':2, '3':3, '4':4, '5':5, '6':6, '-5':7, '-4':8, '-3':9, '-2':10, '-1':11 };
 
@@ -300,16 +314,16 @@ export function midiToGrid(parsed) {
       const durEighths = Math.round(durTicks / (tpq / 2));
       
       // Improvement 5: Symmetric Lightness Reconstruction (Boosted for Vibrancy)
-      let lightness = 0.45;
-      if (durEighths >= 8) lightness = 0.95;
-      else if (durEighths >= 4) lightness = 0.82;
-      else if (durEighths >= 2) lightness = 0.65;
+      let lightness = 0.15;
+      if (durEighths >= 8) lightness = 0.85;
+      else if (durEighths >= 4) lightness = 0.60;
+      else if (durEighths >= 2) lightness = 0.35;
 
       // Removed Ensemble Filters to ensure "Inversion Purity"
       const rgb = oklchToRgb(lightness, chroma, hue);
       for (let b = 0; b < durEighths; b++) {
         const beat = beatStart + b;
-        if (beat >= ROWS_PER_VOICE || col >= GRID) break;
+        if (beat >= ROWS_PER_VOICE || col >= GRID_COLS) break;
         grid[voice.rows[beat]][col] = rgb;
       }
     });
@@ -350,7 +364,7 @@ export function generateMidiTracks(grid, tempo, title, timeSig, origW = 1024, or
     metaEvents.push({ tick: 0, data: [0xFF, 0x51, 0x03, (usPerQN>>16)&0xFF, (usPerQN>>8)&0xFF, usPerQN&0xFF] });
 
     const SF_MAP = [0, 1, 2, 3, 4, 5, 6, -5, -4, -3, -2, -1];
-    for (let sec = 0; sec < GRID/8; sec++) {
+    for (let sec = 0; sec < GRID_COLS/8; sec++) {
         const active = deriveSectionKey(grid, sec * 8, 8);
         const sf = SF_MAP[active.root];
         const mi = active.mode === 'minor' ? 1 : 0;
@@ -365,7 +379,7 @@ export function generateMidiTracks(grid, tempo, title, timeSig, origW = 1024, or
     const score = Array.from({length: NUM_VOICES}, () => []);
     const lastMidi = new Array(NUM_VOICES).fill(-1);
 
-    for (let col = 0; col < GRID; col++) {
+    for (let col = 0; col < GRID_COLS; col++) {
         const active = getActiveKey(grid, col);
         for (let b = 0; b < ROWS_PER_VOICE; b++) {
             VOICES.forEach((voice, vi) => {
@@ -386,6 +400,17 @@ export function generateMidiTracks(grid, tempo, title, timeSig, origW = 1024, or
                             }
                         }
                         midi = bestMidi;
+                        // 8-Semitone Voice-Leading Hard Cap
+                        if (Math.abs(midi - lastMidi[vi]) > 8) {
+                            midi = lastMidi[vi] + Math.sign(midi - lastMidi[vi]) * 8;
+                            let scale = scaleNotes(active.root, active.mode, voice.lo, voice.hi);
+                            let closest = scale[0];
+                            let md = Infinity;
+                            for (let sn of scale) {
+                                if (Math.abs(sn - midi) < md) { md = Math.abs(sn - midi); closest = sn; }
+                            }
+                            midi = closest;
+                        }
                     }
                     cc85 = 64 + (midi - origMidi);
                     lastMidi[vi] = midi;
@@ -436,7 +461,7 @@ export function generateMidiTracks(grid, tempo, title, timeSig, origW = 1024, or
             const n = vScore[b];
             if (n.midi < 0) continue;
             let grammarDur = 1;
-            if (n.L >= 0.85) grammarDur = 8; else if (n.L >= 0.70) grammarDur = 4; else if (n.L >= 0.45) grammarDur = 2;
+            if (n.L >= 0.75) grammarDur = 8; else if (n.L >= 0.50) grammarDur = 4; else if (n.L >= 0.25) grammarDur = 2;
             let dur = 1, maxInMeasure = 8 - (b % 8), targetDur = Math.min(grammarDur, maxInMeasure);
             while (dur < targetDur && b + dur < vScore.length) {
                 const next = vScore[b + dur];

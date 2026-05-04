@@ -2,7 +2,7 @@
  * UI & DOM Management (Canvas, Event Listeners)
  */
 
-import { GRID } from './music-engine.js';
+import { GRID_COLS, GRID_ROWS } from './music-engine.js';
 
 export function drawPreview(img) {
   const c = document.getElementById('preview-canvas');
@@ -15,22 +15,21 @@ export function drawPreview(img) {
 
 export function drawGrid(grid, canvasId) {
   const c = document.getElementById(canvasId || 'grid-canvas');
-  const size = 512;
-  if (grid.aspectRatio) {
-    if (grid.aspectRatio >= 1) {
-      c.width = size;
-      c.height = Math.round(size / grid.aspectRatio);
-    } else {
-      c.height = size;
-      c.width = Math.round(size * grid.aspectRatio);
-    }
+  const size = 1024; // Wider for panoramics
+  const ar = grid.aspectRatio || (GRID_COLS / GRID_ROWS);
+  if (ar >= 1) {
+    c.width = size;
+    c.height = Math.round(size / ar);
+  } else {
+    c.height = size;
+    c.width = Math.round(size * ar);
   }
 
   const ctx = c.getContext('2d');
-  const cellW = c.width / GRID;
-  const cellH = c.height / GRID;
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
+  const cellW = c.width / GRID_COLS;
+  const cellH = c.height / GRID_ROWS;
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
       const { r, g, b } = grid[y][x];
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(x*cellW, y*cellH, cellW+1, cellH+1);
@@ -49,7 +48,7 @@ export function drawAnimationOverlay(canvasId, grid, currentEighth, NUM_VOICES) 
     const c = document.getElementById(canvasId);
     if (!c) return;
     const ctx = c.getContext('2d');
-    const cellW = c.width / GRID;
+    const cellW = c.width / GRID_COLS;
     const currentCol = Math.floor(currentEighth / 8);
     const subBeat = (currentEighth % 8) / 8;
 
@@ -63,7 +62,7 @@ export function drawAnimationOverlay(canvasId, grid, currentEighth, NUM_VOICES) 
     }
 
     // Highlight current
-    if (currentCol < GRID) {
+    if (currentCol < GRID_COLS) {
         ctx.fillStyle = 'rgba(167, 139, 250, 0.3)';
         ctx.fillRect(currentCol * cellW, 0, cellW, c.height);
 
@@ -80,7 +79,7 @@ export function drawAnimationOverlay(canvasId, grid, currentEighth, NUM_VOICES) 
     }
 
     // Dim future
-    if (currentCol + 1 < GRID) {
+    if (currentCol + 1 < GRID_COLS) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
         ctx.fillRect((currentCol + 1) * cellW, 0, c.width - (currentCol + 1) * cellW, c.height);
     }

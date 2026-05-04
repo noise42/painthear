@@ -2,7 +2,7 @@
  * Main Entry Point - Synesthesia Composer
  */
 
-import { GRID, NUM_VOICES, KEY_NAMES, SF_TO_ROOT, imageToGrid, deriveTimeSig, deriveTempo, deriveEnsemble, columnKey, gridToAbc, midiToGrid, generateMidiTracks } from './music-engine.js';
+import { NUM_VOICES, KEY_NAMES, SF_TO_ROOT, imageToGrid, deriveTimeSig, deriveTempo, deriveEnsemble, columnKey, gridToAbc, midiToGrid, generateMidiTracks } from './music-engine.js';
 import { buildMidiFile, parseMidi } from './midi-core.js';
 import { playGrid, stopPlayback } from './audio-synth.js';
 import { drawPreview, drawGrid, updateStats, drawAnimationOverlay } from './ui-manager.js';

@@ -2,7 +2,7 @@
  * Web Audio API Synthesis & Playback
  */
 
-import { VOICES, GRID, ROWS_PER_VOICE, deriveEnsemble, getActiveKey, pixelToMidi } from './music-engine.js';
+import { VOICES, GRID_COLS, ROWS_PER_VOICE, deriveEnsemble, getActiveKey, pixelToMidi } from './music-engine.js';
 
 let audioCtx = null;
 let isPlaying = false;
@@ -25,7 +25,7 @@ export function playGrid(grid, tempo, onAnimationStep, onPlaybackFinished) {
   const ensemble = deriveEnsemble(grid);
 
   VOICES.forEach((voice, vi) => {
-    for (let col = 0; col < GRID; col++) {
+    for (let col = 0; col < GRID_COLS; col++) {
       const active = getActiveKey(grid, col);
       for (let b = 0; b < ROWS_PER_VOICE; b++) {
         const row = voice.rows[b];
@@ -64,7 +64,7 @@ export function playGrid(grid, tempo, onAnimationStep, onPlaybackFinished) {
   playbackTempo = tempo;
   
   // Hand off animation to UI manager via callback
-  const totalDur = GRID * ROWS_PER_VOICE * beatDur;
+  const totalDur = GRID_COLS * ROWS_PER_VOICE * beatDur;
   startInternalAnimation(beatDur, onAnimationStep);
   
   setTimeout(() => {
