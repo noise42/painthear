@@ -313,11 +313,15 @@ export function midiToGrid(parsed) {
       const durTicks = note.end - note.start;
       const durEighths = Math.round(durTicks / (tpq / 2));
       
-      // Improvement 5: Symmetric Lightness Reconstruction (Boosted for Vibrancy)
+      // Improvement 5: Symmetric Lightness Reconstruction with CC 74 (Brightness)
       let lightness = 0.15;
-      if (durEighths >= 8) lightness = 0.85;
-      else if (durEighths >= 4) lightness = 0.60;
-      else if (durEighths >= 2) lightness = 0.35;
+      if (note.ccs && note.ccs[74] !== undefined) {
+          lightness = note.ccs[74] / 127.0;
+      } else {
+          if (durEighths >= 8) lightness = 0.85;
+          else if (durEighths >= 4) lightness = 0.60;
+          else if (durEighths >= 2) lightness = 0.35;
+      }
 
       // Removed Ensemble Filters to ensure "Inversion Purity"
       const rgb = oklchToRgb(lightness, chroma, hue);
@@ -470,8 +474,9 @@ export function generateMidiTracks(grid, tempo, title, timeSig, origW = 1024, or
             const idealHue = ((n.origMidi - voice.lo) / (voice.hi - voice.lo)) * 360;
             let residual = (n.h - idealHue + 540) % 360 - 180;
             const bendValue = 8192 + Math.round((residual / 15.0) * 2048);
+            const cc74 = Math.max(0, Math.min(127, Math.round(n.L * 127)));
             t.push(...vlq(Math.max(0, n.tick - prevEnd)), 0xE0|vi, bendValue&0x7F, (bendValue>>7)&0x7F);
-            t.push(...vlq(0), 0xB0|vi, 85, n.cc85, ...vlq(0), 0xB0|vi, 86, n.cc86, ...vlq(0), 0x90|vi, n.midi, n.vel);
+            t.push(...vlq(0), 0xB0|vi, 85, n.cc85, ...vlq(0), 0xB0|vi, 86, n.cc86, ...vlq(0), 0xB0|vi, 74, cc74, ...vlq(0), 0x90|vi, n.midi, n.vel);
             t.push(...vlq(dur * EIGHTH), 0x80 | vi, n.midi, 0);
             prevEnd = n.tick + (dur * EIGHTH);
             b += dur - 1;
