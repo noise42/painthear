@@ -5,8 +5,9 @@
 import { rgbToOklch, oklchToRgb, rgbToHsl } from './color.js';
 import { vlq, textEvent } from './midi-core.js';
 
-export const GRID_COLS = 128;
+export let GRID_COLS = 128;
 export const GRID_ROWS = 32;
+export function setGridCols(val) { GRID_COLS = val; }
 export const ROWS_PER_VOICE = 8;
 export const NUM_VOICES = 4;
 
@@ -272,6 +273,9 @@ export function midiToGrid(parsed) {
   if (ccs[104] !== undefined) {
       bgColor = { r: ccs[104] * 2, g: ccs[105] * 2, b: ccs[106] * 2 };
   }
+  if (ccs[107] !== undefined && ccs[108] !== undefined) {
+      setGridCols((ccs[107] << 7) | ccs[108]);
+  }
 
   const grid = Array.from({length: GRID_ROWS}, () =>
     Array.from({length: GRID_COLS}, () => ({...bgColor}))
@@ -370,6 +374,7 @@ export function generateMidiTracks(grid, tempo, title, timeSig, origW = 1024, or
     t0.push(...vlq(0), 0xB0, 100, (origW >> 7) & 0x7F, ...vlq(0), 0xB0, 101, origW & 0x7F);
     t0.push(...vlq(0), 0xB0, 102, (origH >> 7) & 0x7F, ...vlq(0), 0xB0, 103, origH & 0x7F);
     t0.push(...vlq(0), 0xB0, 104, (bgR >> 1) & 0x7F, ...vlq(0), 0xB0, 105, (bgG >> 1) & 0x7F, ...vlq(0), 0xB0, 106, (bgB >> 1) & 0x7F);
+    t0.push(...vlq(0), 0xB0, 107, (GRID_COLS >> 7) & 0x7F, ...vlq(0), 0xB0, 108, GRID_COLS & 0x7F);
 
     const [num, den] = timeSig.split('/').map(Number);
     const denPow = Math.log2(den);

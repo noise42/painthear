@@ -2,7 +2,7 @@
  * Main Entry Point - Synesthesia Composer
  */
 
-import { NUM_VOICES, KEY_NAMES, SF_TO_ROOT, imageToGrid, deriveTimeSig, deriveTempo, deriveEnsemble, columnKey, gridToAbc, midiToGrid, generateMidiTracks } from './music-engine.js';
+import { NUM_VOICES, KEY_NAMES, SF_TO_ROOT, imageToGrid, deriveTimeSig, deriveTempo, deriveEnsemble, columnKey, gridToAbc, midiToGrid, generateMidiTracks, setGridCols, GRID_COLS, GRID_ROWS } from './music-engine.js';
 import { buildMidiFile, parseMidi } from './midi-core.js';
 import { playGrid, stopPlayback } from './audio-synth.js';
 import { drawPreview, drawGrid, updateStats, drawAnimationOverlay } from './ui-manager.js';
@@ -25,6 +25,7 @@ const stopBtn = document.getElementById('stop-btn');
 const downloadBtn = document.getElementById('download-btn');
 const invertBtn = document.getElementById('invert-btn');
 const scoreTitleInput = document.getElementById('score-title');
+const gridSizeSelect = document.getElementById('grid-size-select');
 
 // Initialize
 function init() {
@@ -57,38 +58,62 @@ function setupEventListeners() {
     stopBtn.addEventListener('click', stopPlayback);
     downloadBtn.addEventListener('click', downloadMidi);
     invertBtn.addEventListener('click', previewShadow);
+
+    if (gridSizeSelect) {
+        gridSizeSelect.addEventListener('change', (e) => {
+            setGridCols(parseInt(e.target.value, 10));
+            updateGridSizeLabels();
+            if (loadedImg) {
+                processImage(loadedImg);
+            }
+        });
+    }
+}
+
+function updateGridSizeLabels() {
+    document.querySelectorAll('.grid-size-label').forEach(el => {
+        el.textContent = `${GRID_COLS}x${GRID_ROWS}`;
+    });
 }
 
 function handleFile(file) {
     if (!file.type.startsWith('image/')) return;
+    if (gridSizeSelect) setGridCols(parseInt(gridSizeSelect.value, 10));
+    updateGridSizeLabels();
+
     const img = new Image();
     img.onload = () => {
         loadedImg = img;
-        drawPreview(img);
-        currentGrid = imageToGrid(img);
-        drawGrid(currentGrid);
-
-        const timeSig = deriveTimeSig(img.width, img.height);
-        const tempo = deriveTempo(currentGrid);
-        const ensemble = deriveEnsemble(currentGrid);
-        const { root, mode } = columnKey(currentGrid, 0);
-        
-        updateStats({
-            time: timeSig,
-            tempo: tempo,
-            key: KEY_NAMES[root] + ' ' + mode,
-            ensemble: ensemble
-        });
-
         if (!scoreTitleInput.value) {
             scoreTitleInput.value = file.name.replace(/\.[^.]+$/, '');
         }
-
-        canvasSection.classList.remove('hidden');
-        scoreSection.classList.add('hidden');
-        invertSection.classList.add('hidden');
+        processImage(img);
     };
     img.src = URL.createObjectURL(file);
+}
+
+function processImage(img) {
+    drawPreview(img);
+    currentGrid = imageToGrid(img);
+    drawGrid(currentGrid);
+
+    const timeSig = deriveTimeSig(img.width, img.height);
+    const tempo = deriveTempo(currentGrid);
+    const ensemble = deriveEnsemble(currentGrid);
+    const { root, mode } = columnKey(currentGrid, 0);
+    
+    updateStats({
+        time: timeSig,
+        tempo: tempo,
+        key: KEY_NAMES[root] + ' ' + mode,
+        ensemble: ensemble
+    });
+
+    canvasSection.classList.remove('hidden');
+    scoreSection.classList.add('hidden');
+    invertSection.classList.add('hidden');
+    
+    if (currentAbc) composeScore();
 }
 
 function composeScore() {
@@ -175,6 +200,9 @@ function handleMidiFile(file) {
     reader.onload = (e) => {
         const parsed = parseMidi(e.target.result);
         const grid = midiToGrid(parsed);
+        updateGridSizeLabels();
+        if (gridSizeSelect) gridSizeSelect.value = GRID_COLS.toString();
+        
         currentGrid = grid;
         loadedImg = null; 
         
