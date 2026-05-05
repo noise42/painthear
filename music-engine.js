@@ -94,7 +94,7 @@ export function pixelToMidi(px, voice, root, mode) {
   if (scale.length === 0) return { midi: -1, vel: 0, l: 0 };
   
   const { L, C, h } = rgbToOklch(px.r, px.g, px.b);
-  if (L < 0.15 || C < 0.05) return { midi: -1, vel: 0, l: 0 };
+  if (L < 0.18 || C < 0.06) return { midi: -1, vel: 0, l: 0 };
   
   const rawMidi = voice.lo + (h / 360) * (voice.hi - voice.lo);
   let closestMidi = scale[0];
@@ -189,7 +189,18 @@ export function gridToAbc(grid, title, timeSig, tempo) {
       for (let b = 0; b < ROWS_PER_VOICE; b++) {
         const px = grid[voice.rows[b]][col];
         let { midi, vel, L } = pixelToMidi(px, voice, active.root, active.mode);
-        if (midi < 0) continue;
+        if (midi < 0) {
+            let rDur = 1;
+            while (b + rDur < ROWS_PER_VOICE) {
+                 const nxtPx = grid[voice.rows[b+rDur]][col];
+                 const nxt = pixelToMidi(nxtPx, voice, active.root, active.mode);
+                 if (nxt.midi < 0) rDur++; else break;
+            }
+            if (rDur === 1) line += 'z ';
+            else line += 'z' + rDur + ' ';
+            b += rDur - 1;
+            continue;
+        }
 
         if (lastMidi !== -1) {
             let bestMidi = midi;
@@ -225,11 +236,10 @@ export function gridToAbc(grid, title, timeSig, tempo) {
         const maxInMeasure = ROWS_PER_VOICE - b;
         let dur = 1;
         const targetDur = Math.min(grammarDur, maxInMeasure);
+        const suggCurr = pixelToMidi(px, voice, active.root, active.mode).midi;
         while (dur < targetDur) {
             const next = pixelToMidi(grid[voice.rows[b+dur]][col], voice, active.root, active.mode);
-            const suggNext = pixelToMidi(grid[voice.rows[b+dur]][col], voice, active.root, active.mode).midi;
-            const suggCurr = pixelToMidi(px, voice, active.root, active.mode).midi;
-            if (suggNext === suggCurr && next.L > 0.4) dur++;
+            if (next.midi === suggCurr && next.L >= 0.25) dur++;
             else break;
         }
 
@@ -469,7 +479,7 @@ export function generateMidiTracks(grid, tempo, title, timeSig, origW = 1024, or
             let dur = 1, maxInMeasure = 8 - (b % 8), targetDur = Math.min(grammarDur, maxInMeasure);
             while (dur < targetDur && b + dur < vScore.length) {
                 const next = vScore[b + dur];
-                if (next.origMidi === n.origMidi && next.L > 0.4) dur++; else break;
+                if (next.origMidi === n.origMidi && next.L >= 0.25) dur++; else break;
             }
             const idealHue = ((n.origMidi - voice.lo) / (voice.hi - voice.lo)) * 360;
             let residual = (n.h - idealHue + 540) % 360 - 180;
