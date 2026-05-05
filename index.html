@@ -19,8 +19,15 @@
   </header>
 
   <main>
-    <!-- Upload Section -->
-    <section id="upload-section" class="glass-panel">
+    <div class="tabs">
+      <button id="btn-app-tab" class="tab-btn active" onclick="switchTab('app-tab')">🎹 Composer</button>
+      <button id="btn-about-tab" class="tab-btn" onclick="switchTab('about-tab')">📖 PrismaScore Mapping</button>
+    </div>
+
+    <!-- MAIN APP TAB -->
+    <div id="app-tab" class="tab-content">
+      <!-- Upload Section -->
+      <section id="upload-section" class="glass-panel">
       <div id="drop-zone" class="upload-card">
         <div class="drop-icon-row">
           <span class="drop-icon">🎨</span>
@@ -76,7 +83,9 @@
     <!-- Sheet Music Section -->
     <section id="score-section" class="glass-panel hidden">
       <h2>Score</h2>
-      <div id="paper"></div>
+      <div class="score-container" style="max-height: 500px; overflow-y: auto; overflow-x: auto; border-radius: 8px; background: #ffffff; box-shadow: inset 0 0 15px rgba(0,0,0,0.1); margin-bottom: 1.5rem;">
+        <div id="paper" style="padding: 1.5rem;"></div>
+      </div>
       <div class="btn-row">
         <button id="play-btn" class="primary-btn">▶ Play</button>
         <button id="stop-btn" class="secondary-btn">■ Stop</button>
@@ -103,7 +112,30 @@
         <button id="midi-play-btn" class="primary-btn">▶ Play with Cursor</button>
         <button id="midi-stop-btn" class="secondary-btn">■ Stop</button>
       </div>
-    </section>
+      </section>
+    </div> <!-- END APP TAB -->
+
+    <!-- ABOUT TAB / PHILOSOPHY -->
+    <div id="about-tab" class="tab-content hidden glass-panel">
+      <h2>PrismaScore v2.1: Come funziona la Mappatura</h2>
+      <p>Questa applicazione traduce i pixel di un'immagine in formato musicale (e viceversa) applicando una decodifica algoritmica 1:1. Ogni zona dell'immagine veicola istruzioni visive ed acustiche misurabili, divise tra macro-armonia globale e selezione della singola nota.</p>
+      
+      <h3>1. Armonia di Base: Il Circolo delle Quinte</h3>
+      <p>L'immagine è suddivisa in blocchi temporali (misure). Il colore medio di ogni blocco imposta la Tonalità (Key Signature) per quella sezione. L'algoritmo calcola una media circolare delle Tinte (Hue) e la mappa sui gradi del Circolo delle Quinte: sfumature visive graduali garantiscono così modulazioni armoniche fluide. La luminosità media (Lightness) del blocco stabilisce se la tonalità sarà Maggiore o Minore.</p>
+
+      <h3>2. Selezione dell'Intonazione (Pitch)</h3>
+      <p>L'altezza esatta di ogni singola nota viene calcolata valutando la Tinta (Hue) del pixel spazialmente associato a una specifica Voce (Soprano, Contralto, Tenore, Basso). La crominanza mappa il pitch all'interno della tessitura (il range vocale) di quello strumento, dopodiché la nota grezza viene "quantizzata" sul grado della scala armonica attiva in quel momento. Infine, regole classiche di Voice-Leading (cap di salto massimo di 8 semitoni) arrotondano la melodia per evitare dissonanze grottesche tra note adiacenti.</p>
+      
+      <h3>3. Valore Ritmico (Lightness) e Dinamica (Chroma)</h3>
+      <ul>
+        <li><strong>Luminosità (Durata):</strong> Le aree brillanti generano note di lunga durata unendo ritmicamente i blocchi cromatici simili tramite legature di valore. Le aree scure frammentano l'articolazione in note brevi (staccati), fino a scendere sotto la soglia di tolleranza, introducendo vere e proprie pause.</li>
+        <li><strong>Saturazione (Velocity):</strong> I colori vivaci producono note ad alta intensità e volume. I colori desaturati e grigi innescano suoni tenui (pianissimo).</li>
+      </ul>
+
+      <h3>4. Invertibilità (La "Musical Shadow")</h3>
+      <p>Il protocollo tenta di stabilire un ponte bidirezionale tra il render pittorico e l'export MIDI. Durante la conversione in musica, l'esatta "Luce" originale del dipinto viene incapsulata nel parametro Control Change 74 (Brightness Filter). Questo permette, fornendo in input alla WebApp lo spartito musicale in un secondo momento, di estrarne l'ombra acustica per ri-dipingere un layer visivo la cui natura chiaroscurale e strutturale sia massimamente avvicinabile e proporzionata all'opera originaria.</p>
+    </div>
+
   </main>
 
   <footer class="credits">

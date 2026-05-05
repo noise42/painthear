@@ -27,6 +27,14 @@ const invertBtn = document.getElementById('invert-btn');
 const scoreTitleInput = document.getElementById('score-title');
 const gridSizeSelect = document.getElementById('grid-size-select');
 
+// Tab Navigation Logic
+window.switchTab = function(tabId) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById(tabId).classList.remove('hidden');
+    document.getElementById('btn-' + tabId).classList.add('active');
+};
+
 // Initialize
 function init() {
     setupEventListeners();

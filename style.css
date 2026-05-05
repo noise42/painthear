@@ -58,6 +58,43 @@ main {
   -webkit-backdrop-filter: blur(12px);
 }
 
+.tabs {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.tab-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: 2px solid transparent;
+  padding: 0.5rem 1.5rem;
+  border-radius: 20px;
+  font-size: 1.1rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.tab-btn:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.05);
+}
+.tab-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(167, 139, 250, 0.1);
+  font-weight: 600;
+}
+
+#about-tab {
+  line-height: 1.7;
+}
+#about-tab h2 { color: var(--accent2); margin-bottom: 1.5rem; }
+#about-tab h3 { color: var(--accent); margin-top: 1.5rem; margin-bottom: 0.5rem; }
+#about-tab p { margin-bottom: 1rem; }
+#about-tab ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+#about-tab li { margin-bottom: 0.8rem; }
+
 .hidden { display: none !important; }
 
 /* Upload */
@@ -257,12 +294,8 @@ main {
 
 /* Score */
 #paper {
-  background: #ffffff !important;
+  background: transparent !important;
   color: #000000 !important;
-  border-radius: 8px;
-  padding: 1.5rem;
-  min-height: 200px;
-  overflow-x: auto;
   opacity: 1 !important;
 }
 
